@@ -228,6 +228,16 @@ export async function setUpGlass() {
       el.className = 'scene-fallback';
       return el;
     };
+    const wrap = document.createElement('div');
+    wrap.className = 'scene-wrap';
+    const stick = document.createElement('div');
+    stick.className = 'scene-stick';
+    wrap.append(stick);
+    const fit = () => {
+      let top = Infinity, bottom = -Infinity;
+      for (const el of plates) { const r = el.getBoundingClientRect(); top = Math.min(top, r.top + scrollY); bottom = Math.max(bottom, r.bottom + scrollY); }
+      if (top < bottom) { wrap.style.top = Math.round(top) + 'px'; wrap.style.height = Math.round(bottom - top) + 'px'; }
+    };
     let v = mk(), on = false, settled = false, upgrading = false, pending = null, played = false, waits = 0, timer = 0, last = 0;
     const t0 = performance.now();
     const play = () => { if (!on) return; const r = v.play(); if (r && r.catch) r.catch(() => {}); };
@@ -242,7 +252,7 @@ export async function setUpGlass() {
       const v2 = pending; pending = null;
       if (!v2) return;
       const old = v; v = v2;
-      document.body.prepend(v2);
+      stick.prepend(v2);
       play();
       old.pause(); old.removeAttribute('src'); old.load(); old.remove();
     };
@@ -270,7 +280,11 @@ export async function setUpGlass() {
     v.addEventListener('timeupdate', () => { if (pending && v.currentTime < last) swap(); last = v.currentTime; });
     setTimeout(settle, 12000);
     v.src = SCENE[key].lite + '.mp4';
-    document.body.prepend(v);
+    stick.prepend(v);
+    document.body.prepend(wrap);
+    fit();
+    new ResizeObserver(fit).observe(document.body);
+    addEventListener('load', fit, { once: true });
     const io = new IntersectionObserver((entries) => { for (const e of entries) e.target.__glassOn = e.isIntersecting; sync(); }, { rootMargin: '20% 0px' });
     plates.forEach((el) => io.observe(el));
     document.addEventListener('visibilitychange', sync);
