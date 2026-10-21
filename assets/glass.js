@@ -273,8 +273,8 @@ export async function setUpGlass() {
     if (S.external || S.url || S.fetching || saveData) return;
     S.fetching = true;
     fetch(SCENE[S.key] + '.mp4', { priority: 'low' })
-      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob(); })
-      .then((b) => { S.url = URL.createObjectURL(b); })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+      .then((ab) => { S.url = URL.createObjectURL(new Blob([ab], { type: 'video/mp4' })); })
       .catch(() => { S.url = SCENE[S.key] + '.mp4'; })
       .then(() => { S.fetching = false; syncPlay(); });
   }
