@@ -267,12 +267,15 @@ async function setUpFilm() {
     if (still || g !== gen || i >= plates.length) return;
     const v = plates[i];
     let next = false;
-    const go = () => { if (!next) { next = true; queue(i + 1, g); } };
+    const go = () => { if (!next) { next = true; clearInterval(iv); v.removeEventListener('progress', whenFull); queue(i + 1, g); } };
+    const whole = () => { const b = v.buffered; return v.readyState >= 4 && v.duration > 0 && b.length > 0 && b.end(b.length - 1) >= v.duration - 0.3; };
+    const whenFull = () => { if (whole()) go(); };
     fetchClip(i);
-    if (v.readyState >= 4) go();
-    else if (v.readyState >= 2) setTimeout(go, 6000);
-    else v.addEventListener('loadeddata', () => setTimeout(go, 6000), { once: true });
-    v.addEventListener('canplaythrough', go, { once: true });
+    const iv = setInterval(whenFull, 1000);
+    v.addEventListener('progress', whenFull);
+    v.addEventListener('canplaythrough', whenFull);
+    setTimeout(go, 12000);
+    whenFull();
   }
 
   function load(next) {
@@ -333,10 +336,11 @@ async function setUpFilm() {
   first.then(() => stage.classList.add('is-ready'));
   if (seekAt !== null) return;
 
+  const barPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar')) || 0;
   new IntersectionObserver(([e]) => {
-    onView = e.isIntersecting;
+    onView = e.isIntersecting && e.intersectionRatio >= 0.06;
     if (!onView) { plates.forEach((v, i) => run(i, false)); document.documentElement.classList.remove('hero-summer'); }
-  }, { threshold: 0 }).observe(stage);
+  }, { threshold: [0, 0.06], rootMargin: `-${Math.round(barPx)}px 0px 0px 0px` }).observe(stage);
   document.addEventListener('visibilitychange', () => { if (document.hidden) plates.forEach((v, i) => run(i, false)); });
   for (const ev of ['pointerdown', 'touchstart', 'keydown', 'wheel']) {
     addEventListener(ev, () => { blocked = false; }, { passive: true });

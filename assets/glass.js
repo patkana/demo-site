@@ -1,7 +1,13 @@
 const PLATES = ['.under', '.work', '.owner-sec', '.services', '.survey'];
 const FRAMES = ['.under-pic', '.card-pic', '.owner-pic'];
 const INNER = ['.steps-list', '.card-body', '.svc', '.form'];
-const SCENE = { desk: 'assets/glass/river-desk', phone: 'assets/glass/river-phone' };
+const SCENE = {
+  desk: { full: 'assets/glass/river-desk', lite: 'assets/glass/river-desk-720' },
+  phone: { full: 'assets/glass/river-phone', lite: 'assets/glass/river-phone-720' } };
+const TIER_KEY = 'iq_tier';
+const TIER_TTL = 7 * 864e5;
+const WEAK_GPU = /adreno-[3-6]|mali-g[3-5]|mali-g7[0-6]\b|mali-t|powervr|videocore/i;
+const PROBE_LIGHT_MS = 24;
 const MAX = 20;
 const STRIDE = 256;
 const FPS = 24;
@@ -128,13 +134,54 @@ struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 
 const pickSet = () => (innerWidth <= 760 || innerHeight / innerWidth > 1.25 ? 'phone' : 'desk');
 
-async function startGpu(canvas) {
+function storedTier() {
+  try {
+    const j = JSON.parse(localStorage.getItem(TIER_KEY) || 'null');
+    if (j && j.tier && Date.now() - j.t < TIER_TTL) return j.tier;
+  } catch {}
+  return null;
+}
+
+function storeTier(tier, ms) {
+  try { localStorage.setItem(TIER_KEY, JSON.stringify({ tier, ms, t: Date.now() })); } catch {}
+}
+
+function staticTier(adapter) {
+  const info = adapter.info || {};
+  if (navigator.deviceMemory && navigator.deviceMemory <= 4) return 'light';
+  if (WEAK_GPU.test(info.architecture || '') || WEAK_GPU.test(info.description || '')) return 'light';
+  return null;
+}
+
+async function probeGpu(device, video) {
+  const w = video.videoWidth, h = video.videoHeight;
+  const tex = device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+  const run = (n) => {
+    for (let i = 0; i < n; i++) device.queue.copyExternalImageToTexture({ source: video }, { texture: tex }, [w, h]);
+    return device.queue.onSubmittedWorkDone();
+  };
+  await run(2);
+  const t0 = performance.now();
+  await run(8);
+  const ms = (performance.now() - t0) / 8;
+  tex.destroy();
+  return ms * (1440 * 2560) / Math.max(1, w * h);
+}
+
+async function startGpu(canvas, tier) {
   if (!navigator.gpu) return null;
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) return null;
+  if (tier !== 'light' && staticTier(adapter) === 'light') tier = 'light';
   const device = await adapter.requestDevice();
   const ctx = canvas.getContext('webgpu');
   let format = 'rgba16float', hdr = 1;
+  if (tier === 'light') {
+    format = navigator.gpu.getPreferredCanvasFormat();
+    hdr = 0;
+    ctx.configure({ device, format, alphaMode: 'premultiplied' });
+    return { device, ctx, format, hdr, tier, adapter };
+  }
   try {
     ctx.configure({ device, format, alphaMode: 'premultiplied', toneMapping: { mode: 'extended' } });
     const cfg = ctx.getConfiguration && ctx.getConfiguration();
@@ -144,7 +191,7 @@ async function startGpu(canvas) {
     hdr = 0;
     ctx.configure({ device, format, alphaMode: 'premultiplied' });
   }
-  return { device, ctx, format, hdr };
+  return { device, ctx, format, hdr, tier, adapter };
 }
 
 export async function setUpGlass() {
@@ -157,9 +204,44 @@ export async function setUpGlass() {
   canvas.setAttribute('aria-hidden', 'true');
   document.body.prepend(canvas);
 
-  const gpu = await startGpu(canvas).catch(() => null);
-  if (!gpu) { canvas.remove(); root.classList.remove('glass-wait'); root.classList.add('glass-css'); return; }
+  const sceneVideo = () => {
+    const video = document.createElement('video');
+    video.muted = true; video.loop = true; video.playsInline = true; video.preload = 'auto';
+    video.setAttribute('aria-hidden', 'true');
+    video.className = 'glass-source';
+    document.body.append(video);
+    return video;
+  };
+  const cssFallback = () => {
+    canvas.remove();
+    root.classList.remove('glass-wait'); root.classList.add('glass-css');
+    if (saveData) return;
+    const v = document.createElement('video');
+    v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'metadata';
+    v.setAttribute('aria-hidden', 'true');
+    v.className = 'scene-fallback';
+    v.src = SCENE[pickSet()].lite + '.mp4';
+    document.body.prepend(v);
+    const sync = () => {
+      const on = plates.some((el) => el.__glassOn) && !document.hidden;
+      if (on) { const r = v.play(); if (r && r.catch) r.catch(() => {}); } else v.pause();
+    };
+    const io = new IntersectionObserver((entries) => { for (const e of entries) e.target.__glassOn = e.isIntersecting; sync(); }, { rootMargin: '20% 0px' });
+    plates.forEach((el) => io.observe(el));
+    document.addEventListener('visibilitychange', sync);
+    for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, sync, { passive: true });
+  };
+  let tier = storedTier() || 'ultra';
+  const gpu = await startGpu(canvas, tier).catch(() => null);
+  if (!gpu) { cssFallback(); return; }
+  if (gpu.tier === 'light') { gpu.device.destroy(); cssFallback(); root.classList.add('tier-light'); return; }
   const { device, format, hdr } = gpu;
+  tier = gpu.tier;
+  root.classList.add('tier-' + tier);
+  let probeMs = null;
+  let settleTier = null;
+  let dead = false;
+  const tierReady = new Promise((res) => { settleTier = res; });
   let lastError = '';
   device.addEventListener('uncapturederror', (e) => { lastError = e.error.message; console.warn('glass:', lastError); });
 
@@ -247,36 +329,102 @@ export async function setUpGlass() {
       scenes.set(key, S);
       return S;
     }
-    const video = document.createElement('video');
-    video.muted = true; video.loop = true; video.playsInline = true; video.preload = 'auto';
-    video.setAttribute('aria-hidden', 'true');
-    video.className = 'glass-source';
-    document.body.append(video);
+    const video = sceneVideo();
     video.addEventListener('playing', () => kick());
     video.addEventListener('loadeddata', () => kick());
     const still = new Image();
     still.decoding = 'async';
     const ub = () => device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    S = { key, video, still, tex: null, blurA: null, blurB: null, blurGroups: null, w: 0, h: 0, lastVt: -1, ready: false, dirty: false, dirH: ub(), dirV: ub(), url: null, fetching: false };
+    S = { key, video, still, tex: null, blurA: null, blurB: null, blurGroups: null, w: 0, h: 0, lastVt: -1, ready: false, dirty: false, dirH: ub(), dirV: ub(), url: null, fetching: false, attached: null, full: null, pending: null };
     still.onload = () => {
       if (S.ready) return;
       targets(S, still.naturalWidth, still.naturalHeight);
       device.queue.copyExternalImageToTexture({ source: still }, { texture: S.tex }, [S.w, S.h]);
       S.ready = true; S.dirty = true; kick();
     };
-    still.src = SCENE[key] + '.webp';
+    still.src = SCENE[key].full + '.webp';
     scenes.set(key, S);
     return S;
   }
 
-  function fetchClip(S) {
-    if (S.external || S.url || S.fetching || saveData) return;
-    S.fetching = true;
-    fetch(SCENE[S.key] + '.mp4', { priority: 'low' })
+  function fetchBlob(S, kind) {
+    if (S.external || S.fetching || saveData || dead) return;
+    if (kind === 'full' && (S.full || tier !== 'ultra')) return;
+    const ctl = new AbortController();
+    S.fetching = kind; S.ctl = ctl;
+    fetch(SCENE[S.key][kind] + '.mp4', { priority: kind === 'full' ? 'low' : 'high', signal: ctl.signal })
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
-      .then((ab) => { S.url = URL.createObjectURL(new Blob([ab], { type: 'video/mp4' })); })
-      .catch(() => { S.url = SCENE[S.key] + '.mp4'; })
-      .then(() => { S.fetching = false; syncPlay(); });
+      .then((ab) => URL.createObjectURL(new Blob([ab], { type: 'video/mp4' })))
+      .then((blob) => {
+        S.url = blob;
+        if (kind === 'full') { S.full = blob; prepareFull(S); } else { S.video.src = blob; S.video.load(); S.stalled = false; syncPlay(); setTimeout(() => fetchFullWhenIdle(S), 0); }
+      })
+      .catch(() => {})
+      .then(() => { if (S.ctl === ctl) { S.fetching = false; S.ctl = null; } });
+  }
+
+  function liteSettled(S) {
+    const v = S.video, b = v.buffered;
+    return S.attached === 'full' || !!(S.url && S.url.startsWith('blob:')) || (v.readyState >= 4 && b.length && v.duration && b.end(b.length - 1) >= v.duration - 0.3);
+  }
+
+  function fetchFullWhenIdle(S) {
+    if (tier !== 'ultra' || S.full || S.fetching || saveData || dead) return;
+    if (!S.attached || liteSettled(S)) { fetchBlob(S, 'full'); return; }
+    if (S.waitFull) return;
+    S.waitFull = true;
+    const v = S.video;
+    const tryNow = () => { if (S.full || S.fetching === 'full' || dead) { stop(); return; } if (liteSettled(S) || performance.now() - t0 > 12000) { stop(); fetchBlob(S, 'full'); } };
+    const stop = () => { S.waitFull = false; clearInterval(iv); v.removeEventListener('progress', tryNow); v.removeEventListener('canplaythrough', tryNow); };
+    const t0 = performance.now();
+    const iv = setInterval(tryNow, 1000);
+    v.addEventListener('progress', tryNow);
+    v.addEventListener('canplaythrough', tryNow);
+  }
+
+  function prepareFull(S) {
+    if (tier !== 'ultra' || !S.full || S.pending || S.attached === 'full') return;
+    if (!S.attached) { S.attached = 'full'; S.video.src = S.full; S.video.load(); syncPlay(); return; }
+    const v2 = sceneVideo();
+    v2.addEventListener('canplaythrough', () => { S.pending = v2; if (S.stalled || S.video.readyState < 3) swapToFull(S); else kick(); }, { once: true });
+    v2.src = S.full; v2.load();
+  }
+
+  function attachLite(S) {
+    if (S.external || S.attached) return;
+    if (S.full && tier === 'ultra') { prepareFull(S); return; }
+    if (S.fetching === 'full' && S.ctl) { S.ctl.abort(); S.fetching = false; S.ctl = null; }
+    S.attached = 'lite';
+    S.stalled = false;
+    const t0 = performance.now();
+    let waits = 0, timer = 0;
+    const fallback = () => {
+      S.video.removeEventListener('waiting', onWait); S.video.removeEventListener('playing', onPlay);
+      S.stalled = true;
+      if (S.pending) { swapToFull(S); return; }
+      if (!S.url) { if (S.fetching === 'full' && S.ctl) { S.ctl.abort(); S.fetching = false; S.ctl = null; } fetchBlob(S, 'lite'); }
+    };
+    const onWait = () => {
+      clearTimeout(timer);
+      timer = setTimeout(fallback, 1500);
+      if (performance.now() - t0 < 10000 && played && ++waits >= 1) fallback();
+    };
+    let played = false;
+    const onPlay = () => { clearTimeout(timer); played = true; };
+    S.video.addEventListener('waiting', onWait);
+    S.video.addEventListener('playing', onPlay);
+    S.video.src = SCENE[S.key].lite + '.mp4';
+    S.video.load();
+    fetchFullWhenIdle(S);
+  }
+
+  function swapToFull(S) {
+    const old = S.video, v2 = S.pending;
+    if (!v2) return;
+    S.pending = null; S.video = v2; S.attached = 'full'; S.lastVt = -1; S.stalled = false;
+    const r = v2.play(); if (r && r.catch) r.catch(() => {});
+    old.pause(); old.removeAttribute('src'); old.load(); old.remove();
+    kick();
   }
 
   function pull(S) {
@@ -284,6 +432,7 @@ export async function setUpGlass() {
     if (!v || (saveData && !S.external) || v.readyState < 2 || !v.videoWidth) return;
     const vt = Math.floor(v.currentTime * FPS);
     if (vt === S.lastVt) return;
+    if (S.pending && (vt < S.lastVt || S.stalled)) { swapToFull(S); return; }
     S.lastVt = vt;
     targets(S, v.videoWidth, v.videoHeight);
     device.queue.copyExternalImageToTexture({ source: v }, { texture: S.tex }, [S.w, S.h]);
@@ -385,8 +534,7 @@ export async function setUpGlass() {
     for (const S of scenes.values()) {
       if (S.external) continue;
       if (used.has(S) && !saveData && !document.hidden) {
-        if (!S.url) { fetchClip(S); continue; }
-        if (S.video.getAttribute('src') !== S.url) { S.video.src = S.url; S.video.load(); }
+        if (!S.attached) attachLite(S);
         const r = S.video.play(); if (r && r.catch) r.catch(() => {});
       } else S.video.pause();
     }
@@ -473,7 +621,7 @@ export async function setUpGlass() {
     const hctx = hc.getContext('webgpu');
     hctx.configure(hdr ? { device, format, alphaMode: 'premultiplied', toneMapping: { mode: 'extended' } } : { device, format, alphaMode: 'premultiplied' });
     hero = makeLayer(hc, hctx, collectHero, () => { let k = 0; heroPlates.forEach((v, i) => { if ((parseFloat(v.style.opacity) || (i ? 0 : 1)) > 0.5) k = i; }); return 'hero-' + k; });
-    hero.onFirst = () => { root.classList.add('has-hero-glass'); root.classList.remove('glass-wait'); };
+    hero.onFirst = () => { root.classList.add('has-hero-glass'); root.classList.remove('glass-wait'); runProbe(); };
     const row = stage.querySelector('.hero-ctas');
     const place = () => {
       if (!row) return;
@@ -492,11 +640,53 @@ export async function setUpGlass() {
     place();
     new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; syncPlay(); touch(); }).observe(stage);
     new ResizeObserver(touch).observe(hc);
-  } else root.classList.remove('glass-wait');
+  } else { root.classList.remove('glass-wait'); runProbe(); }
+
+  function teardown() {
+    dead = true;
+    root.classList.remove('has-glass', 'has-hero-glass', 'glass-wait', 'glass-up'); root.classList.add('glass-off'); canvas.remove();
+    document.querySelectorAll('canvas.hero-glass').forEach((c) => c.remove());
+    for (const S of scenes.values()) {
+      if (S.ctl) S.ctl.abort();
+      if (S.external) continue;
+      S.video.remove(); if (S.pending) S.pending.remove();
+      if (S.url && S.url.startsWith('blob:')) URL.revokeObjectURL(S.url);
+      if (S.full && S.full !== S.url) URL.revokeObjectURL(S.full);
+    }
+    const p = chat && chat.canvas.closest('.panel');
+    if (p) p.classList.remove('gpu');
+  }
+
+  function goLight(ms) {
+    tier = 'light';
+    storeTier('light', ms);
+    root.classList.replace('tier-ultra', 'tier-light');
+    teardown();
+    root.classList.remove('glass-off');
+    cssFallback();
+    device.destroy();
+  }
+
+  function runProbe() {
+    if (probeMs !== null) return;
+    probeMs = 0;
+    if (tier === 'light' || storedTier() === 'ultra') { settleTier(tier); return; }
+    const lead = heroPlates.find((v) => v.readyState >= 2 && v.videoWidth) || heroPlates[0];
+    const go = () => probeGpu(device, lead)
+      .then((ms) => {
+        probeMs = Math.round(ms * 10) / 10;
+        if (ms > PROBE_LIGHT_MS) goLight(probeMs); else storeTier('ultra', probeMs);
+      })
+      .catch(() => {})
+      .then(() => settleTier(tier));
+    if (lead && lead.readyState >= 2 && lead.videoWidth) go();
+    else if (lead) { let done = false; const once = () => { if (!done) { done = true; go(); } }; lead.addEventListener('loadeddata', once, { once: true }); setTimeout(() => { if (!done) { done = true; settleTier(tier); } }, 6000); }
+    else settleTier(tier);
+  }
 
   addEventListener('iqbot:glass', (e) => {
     const d = e.detail;
-    if (!d || !d.canvas) return;
+    if (!d || !d.canvas || dead) return;
     if (!chat) {
       const ctx = d.canvas.getContext('webgpu');
       if (!ctx) return;
@@ -530,24 +720,18 @@ export async function setUpGlass() {
   }).observe(canvas);
   document.addEventListener('visibilitychange', () => { syncPlay(); touch(); });
   for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, () => syncPlay(), { passive: true });
-  device.lost.then(() => {
-    root.classList.remove('has-glass', 'has-hero-glass', 'glass-wait'); root.classList.add('glass-off'); canvas.remove();
-    document.querySelectorAll('canvas.hero-glass').forEach((c) => c.remove());
-    for (const S of scenes.values()) { S.video.remove(); if (S.url && S.url.startsWith('blob:')) URL.revokeObjectURL(S.url); }
-    const p = chat && chat.canvas.closest('.panel');
-    if (p) p.classList.remove('gpu');
-  });
+  device.lost.then(() => { if (!dead) teardown(); });
 
   measureInsets();
   syncPlay();
-  const prefetch = () => fetchClip(getScene(pickSet()));
+  const prefetch = () => tierReady.then(() => { if (!dead) fetchFullWhenIdle(getScene(pickSet())); });
   const lead = heroPlates[0];
   if (lead && lead.readyState < 4) { lead.addEventListener('canplaythrough', prefetch, { once: true }); setTimeout(prefetch, 8000); } else setTimeout(prefetch, 1500);
   if (new URLSearchParams(location.search).has('probe')) {
-    window.__glass = { probe: () => ({ hdr, format, err: lastError, has: root.classList.contains('has-glass'), visible: pageVisible, renders,
+    window.__glass = { probe: () => ({ hdr, format, tier, probeMs, dead, err: lastError, has: root.classList.contains('has-glass'), visible: pageVisible, renders,
       page: { scene: page.scene && page.scene.key, n: page.n, canvas: [page.w, page.h] },
       chat: chat ? { on: chat.on, full: chatFull, scene: chat.scene && chat.scene.key, n: chat.n, rendered: chat.rendered, canvas: [chat.w, chat.h] } : null,
-      scenes: [...scenes.values()].map((S) => ({ key: S.key, ready: S.ready, dim: [S.w, S.h], playing: !S.video.paused, t: +S.video.currentTime.toFixed(2), fetched: !!S.url, fetching: !!S.fetching })) }) };
+      scenes: [...scenes.values()].map((S) => ({ key: S.key, ready: S.ready, dim: [S.w, S.h], playing: !S.video.paused, t: +S.video.currentTime.toFixed(2), fetched: !!S.url, fetching: S.fetching || false, attached: S.attached || null, full: !!S.full, pending: !!S.pending, stalled: !!S.stalled })) }) };
   }
 }
 
