@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 32" role="img" aria-label="Niko Stroi mark">
+  <path d="M3 25 L24 6 L45 25" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M9 20 L24 6 L39 20" fill="none" stroke="#F27A1A" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M34 15 V5 h5 v16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+</svg>

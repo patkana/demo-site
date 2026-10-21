@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 120" role="img" aria-label="Niko Stroi">
+  <defs>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#1D3A66"/>
+      <stop offset="1" stop-color="#143055"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F27A1A"/>
+      <stop offset="1" stop-color="#D45A0D"/>
+    </linearGradient>
+  </defs>
+  <path d="M20 36 Q110 2 200 36 Q200 70 110 86 Q20 70 20 36 Z" fill="url(#wave)"/>
+  <path d="M14 42 Q110 10 206 42 L206 48 Q110 18 14 50 Z" fill="url(#arc)" opacity="0.95"/>
+  <text x="110" y="52" font-family="'Oswald','Arial Narrow',sans-serif" font-weight="700" font-size="28" fill="#f5efe4" text-anchor="middle" letter-spacing="1">Niko</text>
+  <text x="110" y="80" font-family="'Oswald','Arial Narrow',sans-serif" font-weight="700" font-size="28" fill="#F27A1A" text-anchor="middle" letter-spacing="1">Stroi</text>
+  <path d="M22 100 L198 100" stroke="#F27A1A" stroke-width="3" stroke-linecap="round"/>
+</svg>
