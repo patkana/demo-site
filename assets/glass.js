@@ -2,12 +2,12 @@ const PLATES = ['.under', '.work', '.owner-sec', '.services', '.survey'];
 const FRAMES = ['.under-pic', '.card-pic', '.owner-pic'];
 const INNER = ['.steps-list', '.card-body', '.svc', '.form'];
 const SCENE = {
-  desk: { full: 'assets/glass/river-desk', lite: 'assets/glass/river-desk-720' },
-  phone: { full: 'assets/glass/river-phone', lite: 'assets/glass/river-phone-720' } };
+  desk: { full: 'assets/glass/river-desk', mid: 'assets/glass/river-desk-720', lite: 'assets/glass/river-desk-480' },
+  phone: { full: 'assets/glass/river-phone', mid: 'assets/glass/river-phone-720', lite: 'assets/glass/river-phone-480' } };
 const TIER_KEY = 'iq_tier';
 const TIER_TTL = 7 * 864e5;
 const WEAK_GPU = /adreno-[3-6]|mali-g[3-5]|mali-g7[0-6]\b|mali-t|powervr|videocore/i;
-const PROBE_LIGHT_MS = 24;
+const PROBE_LIGHT_MS = 40;
 const MAX = 20;
 const STRIDE = 256;
 const FPS = 24;
@@ -161,11 +161,15 @@ async function probeGpu(device, video) {
     return device.queue.onSubmittedWorkDone();
   };
   await run(2);
-  const t0 = performance.now();
-  await run(8);
-  const ms = (performance.now() - t0) / 8;
+  let best = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const t0 = performance.now();
+    await run(8);
+    best = Math.min(best, (performance.now() - t0) / 8);
+    await new Promise((r) => setTimeout(r, 120));
+  }
   tex.destroy();
-  return ms * (1440 * 2560) / Math.max(1, w * h);
+  return best * (1440 * 2560) / Math.max(1, w * h);
 }
 
 async function startGpu(canvas, tier) {
@@ -216,20 +220,62 @@ export async function setUpGlass() {
     canvas.remove();
     root.classList.remove('glass-wait'); root.classList.add('glass-css');
     if (saveData) return;
-    const v = document.createElement('video');
-    v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'metadata';
-    v.setAttribute('aria-hidden', 'true');
-    v.className = 'scene-fallback';
-    v.src = SCENE[pickSet()].lite + '.mp4';
-    document.body.prepend(v);
-    const sync = () => {
-      const on = plates.some((el) => el.__glassOn) && !document.hidden;
-      if (on) { const r = v.play(); if (r && r.catch) r.catch(() => {}); } else v.pause();
+    const key = pickSet();
+    const mk = () => {
+      const el = document.createElement('video');
+      el.muted = true; el.loop = true; el.playsInline = true; el.preload = 'auto';
+      el.setAttribute('aria-hidden', 'true');
+      el.className = 'scene-fallback';
+      return el;
     };
+    let v = mk(), on = false, settled = false, upgrading = false, pending = null, played = false, waits = 0, timer = 0, last = 0;
+    const t0 = performance.now();
+    const play = () => { if (!on) return; const r = v.play(); if (r && r.catch) r.catch(() => {}); };
+    const sync = () => { on = plates.some((el) => el.__glassOn) && !document.hidden; if (on) play(); else v.pause(); };
+    const blob = (kind, done) => {
+      fetch(SCENE[key][kind] + '.mp4', { priority: kind === 'lite' ? 'high' : 'low' })
+        .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+        .then((ab) => done(URL.createObjectURL(new Blob([ab], { type: 'video/mp4' }))))
+        .catch(() => {});
+    };
+    const swap = () => {
+      const v2 = pending; pending = null;
+      if (!v2) return;
+      const old = v; v = v2;
+      document.body.prepend(v2);
+      play();
+      old.pause(); old.removeAttribute('src'); old.load(); old.remove();
+    };
+    const upgrade = () => {
+      if (upgrading) return;
+      upgrading = true;
+      blob('mid', (url) => {
+        const v2 = mk();
+        v2.addEventListener('canplaythrough', () => { pending = v2; if (v.readyState < 3) swap(); }, { once: true });
+        v2.src = url; v2.load();
+      });
+    };
+    const wholeLite = () => { const b = v.buffered; return v.readyState >= 4 && v.duration > 0 && b.length > 0 && b.end(b.length - 1) >= v.duration - 0.3; };
+    const settle = () => { if (settled) return; settled = true; upgrade(); };
+    const fallback = () => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      blob('lite', (url) => { const t = v.currentTime; v.src = url; v.load(); v.currentTime = t; play(); upgrade(); });
+    };
+    v.addEventListener('waiting', () => { if (v.seeking || (v.duration && v.currentTime > v.duration - 0.25)) return; clearTimeout(timer); timer = setTimeout(fallback, 1500); if (played && performance.now() - t0 < 15000 && ++waits >= 1) fallback(); });
+    v.addEventListener('playing', () => { clearTimeout(timer); played = true; });
+    v.addEventListener('progress', () => { if (wholeLite()) settle(); });
+    v.addEventListener('canplaythrough', () => { if (wholeLite()) settle(); });
+    v.addEventListener('timeupdate', () => { if (pending && v.currentTime < last) swap(); last = v.currentTime; });
+    setTimeout(settle, 12000);
+    v.src = SCENE[key].lite + '.mp4';
+    document.body.prepend(v);
     const io = new IntersectionObserver((entries) => { for (const e of entries) e.target.__glassOn = e.isIntersecting; sync(); }, { rootMargin: '20% 0px' });
     plates.forEach((el) => io.observe(el));
     document.addEventListener('visibilitychange', sync);
     for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, sync, { passive: true });
+    if (new URLSearchParams(location.search).has('probe')) window.__fallback = { probe: () => ({ w: v.videoWidth, settled, upgrading, pending: !!pending, src: (v.currentSrc || '').slice(0, 5) }) };
   };
   let tier = storedTier() || 'ultra';
   const gpu = await startGpu(canvas, tier).catch(() => null);
@@ -405,6 +451,8 @@ export async function setUpGlass() {
       if (!S.url) { if (S.fetching === 'full' && S.ctl) { S.ctl.abort(); S.fetching = false; S.ctl = null; } fetchBlob(S, 'lite'); }
     };
     const onWait = () => {
+      const v = S.video;
+      if (v.seeking || (v.duration && v.currentTime > v.duration - 0.25)) return;
       clearTimeout(timer);
       timer = setTimeout(fallback, 1500);
       if (performance.now() - t0 < 10000 && played && ++waits >= 1) fallback();
@@ -679,8 +727,9 @@ export async function setUpGlass() {
       })
       .catch(() => {})
       .then(() => settleTier(tier));
-    if (lead && lead.readyState >= 2 && lead.videoWidth) go();
-    else if (lead) { let done = false; const once = () => { if (!done) { done = true; go(); } }; lead.addEventListener('loadeddata', once, { once: true }); setTimeout(() => { if (!done) { done = true; settleTier(tier); } }, 6000); }
+    const start = () => { if (document.readyState === 'complete') setTimeout(go, 400); else addEventListener('load', () => setTimeout(go, 400), { once: true }); };
+    if (lead && lead.readyState >= 2 && lead.videoWidth) start();
+    else if (lead) { let done = false; const once = () => { if (!done) { done = true; start(); } }; lead.addEventListener('loadeddata', once, { once: true }); setTimeout(() => { if (!done) { done = true; settleTier(tier); } }, 6000); }
     else settleTier(tier);
   }
 
