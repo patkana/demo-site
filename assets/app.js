@@ -174,7 +174,7 @@ const FADES = [[0.20, 0.42], [0.58, 0.80]];
 function setUpSnap(sec) {
   const rest = $('[data-hero-rest]', sec);
   if (!rest || !window.ResizeObserver) return;
-  const marks = [...$$('.hero-snap', sec), ...$$('.under-snap'), rest];
+  const marks = [...$$('.hero-snap', sec), ...$$('.under-snap'), ...$$('.laying-snap'), rest];
   const live = () => marks.filter((el) => el === rest || el.getClientRects().length);
   const root = document.documentElement;
   let reach = 0, armed = false, busy = false, idle = 0, acc = 0;
@@ -210,9 +210,53 @@ function setUpSnap(sec) {
     else removeEventListener('wheel', onWheel);
   };
 
+  let tg = null, snapTimer = 0;
+  const dbg = location.search.includes('probe') ? (window.__snapdbg = []) : null;
+  const last = () => { const s = stops(); return s[s.length - 1]; };
+  const onTouchStart = (e) => {
+    tg = null;
+    if (e.touches.length !== 1 || nested(e) || scrollY >= last() - 2 || scrollY >= reach) return;
+    tg = { x: e.touches[0].clientX, y: e.touches[0].clientY, start: scrollY, moved: false, s: stops() };
+    if (dbg) dbg.push(['ts', Math.round(scrollY), e.cancelable]);
+  };
+  const onTouchMove = (e) => {
+    if (!tg) return;
+    const dx = e.touches[0].clientX - tg.x, dy = e.touches[0].clientY - tg.y;
+    if (!tg.moved) {
+      if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return;
+      if (Math.abs(dx) > Math.abs(dy)) { tg = null; return; }
+      tg.moved = true;
+      clearTimeout(snapTimer);
+      root.classList.remove('has-snap');
+    }
+    e.preventDefault();
+    scrollTo({ top: tg.start - dy, behavior: 'instant' });
+    if (dbg) dbg.push(['tm', Math.round(dy), e.cancelable, e.defaultPrevented, Math.round(scrollY)]);
+  };
+  const onTouchEnd = () => {
+    if (!tg) return;
+    const g = tg;
+    tg = null;
+    if (!g.moved) return;
+    const cur = scrollY, dir = Math.sign(cur - g.start);
+    let to = g.start;
+    if (dir && Math.abs(cur - g.start) > 40) {
+      const n = dir > 0 ? g.s.find((p) => p > g.start + 2) : [...g.s].reverse().find((p) => p < g.start - 2);
+      if (n !== undefined) to = n;
+    }
+    if (dbg) dbg.push(['te', Math.round(cur), to]);
+    scrollTo({ top: to, behavior: reduce ? 'instant' : 'smooth' });
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => { if (!tg) root.classList.add('has-snap'); }, 520);
+  };
+  addEventListener('touchstart', onTouchStart, { passive: true });
+  addEventListener('touchmove', onTouchMove, { passive: false });
+  addEventListener('touchend', onTouchEnd, { passive: true });
+  addEventListener('touchcancel', onTouchEnd, { passive: true });
+
   document.body.appendChild(rest);
   const sync = () => {
-    const snaps = $$('.under-snap').filter((el) => el.getClientRects().length);
+    const snaps = [...$$('.under-snap'), ...$$('.laying-snap')].filter((el) => el.getClientRects().length);
     const edge = snaps.length ? snaps[snaps.length - 1].getBoundingClientRect().top : sec.getBoundingClientRect().bottom;
     const top = Math.round(edge - document.body.getBoundingClientRect().top);
     if (rest.style.top !== top + 'px') rest.style.top = top + 'px';
@@ -225,6 +269,8 @@ function setUpSnap(sec) {
   ro.observe(sec);
   const under = $('[data-under]');
   if (under) ro.observe(under);
+  const laying = $('[data-laying]');
+  if (laying) ro.observe(laying);
   addEventListener('load', sync);
   addEventListener('scroll', arm, { passive: true });
   sync();
@@ -413,11 +459,16 @@ function setUpLaying() {
     if (counter) counter.classList.add('is-on');
   }
   show(0);
-  whileVisible(sec, () => {
-    const p = through(sec);
-    const idx = clamp(Math.floor(p * (N + 0.001)), 0, N - 1);
-    show(idx);
-  });
+  const snaps = $$('.laying-snap', sec);
+  const nearest = () => {
+    const pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+    const ys = snaps.filter((el) => el.getClientRects().length).map((el) => Math.abs(el.getBoundingClientRect().top - pad));
+    if (ys.length !== N) return clamp(Math.floor(through(sec) * (N + 0.001)), 0, N - 1);
+    let best = 0;
+    for (let i = 1; i < ys.length; i++) if (ys[i] < ys[best]) best = i;
+    return best;
+  };
+  whileVisible(sec, () => show(nearest()));
 }
 
 /* ---------- Section 03: draggable horizontal rail ---------- */

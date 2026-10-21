@@ -444,7 +444,7 @@ inset -1px 0 0 rgba(0,0,0,.6),
 
 @media(max-width:600px){.hero-h{font-size:clamp(2.1rem,5.4svh,2.7rem);margin-bottom:14px}.hero-lead{font-size:clamp(.94rem,2.15svh,1.06rem);line-height:1.5;margin-bottom:16px}.hero-ctas{gap:10px}.hero-ctas .btn-big{padding:15px;font-size:12px;letter-spacing:.6px}}
 @media(max-width:860px) and (max-height:700px){.cue-a,.cue-b{display:none}.sig-face{width:48px;height:48px}.hero-content{padding-top:calc(var(--bar) + 70px)}}
-@media(max-width:860px){.laying{min-height:260vh;padding:0}.phase-track{right:calc(var(--margin) + 84px);bottom:calc(26px + 100lvh - 100svh);counter-reset:ph}.phase{flex:1 1 auto;text-align:center;padding:10px 7px;white-space:nowrap;counter-increment:ph}.phase:not(.is-on){font-size:0;letter-spacing:0}.phase:not(.is-on)::before{content:counter(ph,decimal-leading-zero);font-size:10px;letter-spacing:1px}.laying-counter{display:none}}
+@media(max-width:860px){.laying{min-height:580lvh;padding:0}.phase-track{right:calc(var(--margin) + 84px);bottom:calc(26px + 100lvh - 100svh);counter-reset:ph}.phase{flex:1 1 auto;text-align:center;padding:10px 7px;white-space:nowrap;counter-increment:ph}.phase:not(.is-on){font-size:0;letter-spacing:0}.phase:not(.is-on)::before{content:counter(ph,decimal-leading-zero);font-size:10px;letter-spacing:1px}.laying-counter{display:none}}
 @media(max-width:600px){.lang-btn{position:relative;padding:6px 10px}.lang-btn::after{content:"";position:absolute;inset:-11px -1px}.fields{grid-template-columns:1fr}.field input,.field textarea{font-size:16px}.chips span{padding:11px 16px}}
 @media(max-width:720px){.foot a{padding:12px 0}}
 @media(max-width:374px){.mark{gap:10px}.mark svg{width:38px;height:26px}.lang{margin-left:6px}}
@@ -464,6 +464,8 @@ html:is(.has-hero-glass,.glass-wait) .vb-btn{background:transparent;box-shadow:n
 @media(max-width:900px) and (max-height:760px){.under .under-pic{aspect-ratio:16/9}.under .steps-list .step{padding:14px 16px;gap:14px}.under .steps-list .step-t{font-size:18px;margin-bottom:2px}.under .steps-list .step-p{font-size:13px;line-height:1.45}.under>.under-stage{gap:10px}}
 .under>.under-snap{position:absolute;left:0;width:1px;height:1px;pointer-events:none;scroll-snap-align:start;scroll-snap-stop:always;display:none;top:calc((100% - 100lvh + var(--bar)) * var(--k) / 4)}
 @media(max-width:900px){.under>.under-snap{display:block}}
+.laying>.laying-snap{position:absolute;left:0;width:1px;height:1px;pointer-events:none;scroll-snap-align:start;scroll-snap-stop:always;display:none;top:calc((100% - 100lvh + var(--bar)) * var(--k) / 5)}
+@media(max-width:860px){.laying>.laying-snap{display:block}}
 .mark .mark-logo{height:34px;width:auto;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .mark-name{white-space:nowrap}
 @media(max-width:420px){.mark .mark-logo{height:27px}.mark{gap:9px}}
