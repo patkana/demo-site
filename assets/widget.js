@@ -22,7 +22,6 @@
     placeholder: function(){ return T('js.chat.placeholder', attr('data-placeholder','Напиши въпрос...')); },
     powered: function(){ return T('js.chat.powered','Задвижвано от IQBot'); },
     status: function(){ return T('js.chat.status','Онлайн'); },
-    disclaimer: function(){ return T('js.chat.disclaimer','AI асистент. Може да сбърка, важното уточни по телефона.'); },
     copy: function(){ return T('js.chat.copy','Копирай'); },
     copied: function(){ return T('js.chat.copied','Копирано'); },
     share: function(){ return T('js.chat.share','Сподели'); },
@@ -220,7 +219,7 @@
       + '<textarea rows="1" maxlength="500" placeholder="'+esc(txt.placeholder())+'"></textarea>'
       + '<button class="mic hide" aria-label="'+esc(txt.mic())+'">'+ICON.mic+'</button>'
       + '<button class="send" aria-label="'+esc(txt.send())+'">'+ICON.send+'</button></div>'
-      + '<div class="foot"><span class="dis">'+esc(txt.disclaimer())+'</span>'+(promoHtml || ' <a href="https://iqbotbg.pro" target="_blank" rel="noopener">'+esc(txt.powered())+'</a>')+'</div></div>'
+      + '<div class="foot">'+(promoHtml || '<a href="https://iqbotbg.pro" target="_blank" rel="noopener">'+esc(txt.powered())+'</a>')+'</div></div>'
     : '<div class="input"><input type="text" placeholder="'+esc(txt.placeholder())+'" maxlength="500"><button class="send" aria-label="Send">▸</button></div>'
       + '<div class="foot"><a href="https://iqbotbg.pro" target="_blank" rel="noopener">'+esc(txt.powered())+' ⚡</a></div>';
 
@@ -508,7 +507,6 @@
     if (input) input.placeholder = txt.placeholder();
     var f = root.querySelector('.foot > a'); if (f) f.textContent = txt.powered() + (glass ? '' : ' ⚡');
     var pt = root.querySelector('.promo .pt'); if (pt) pt.textContent = txt.promo();
-    var d = root.querySelector('.foot .dis'); if (d) d.textContent = txt.disclaimer();
     if (close && glass) close.setAttribute('aria-label', txt.close());
     if (nudgeText) nudgeText.textContent = nudgeLang()[0];
     if (nudge2) nudge2.textContent = nudgeLang()[1];
