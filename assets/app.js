@@ -177,7 +177,9 @@ function setUpSnap(sec) {
   const marks = [...$$('.hero-snap', sec), ...$$('.under-snap'), ...$$('.laying-snap'), rest];
   const live = () => marks.filter((el) => el === rest || el.getClientRects().length);
   const root = document.documentElement;
-  let reach = 0, armed = false, busy = false, idle = 0, acc = 0;
+  let reach = 0, armed = false, busy = false, idle = 0, acc = 0, endY = 0;
+  const strictSnap = /firefox|fxios/i.test(navigator.userAgent);
+  if (strictSnap) root.classList.add('snap-strict');
 
   const stops = () => {
     const pad = parseFloat(getComputedStyle(root).scrollPaddingTop) || 0;
@@ -190,7 +192,8 @@ function setUpSnap(sec) {
   const onWheel = (e) => {
     if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || nested(e)) return;
     const s = stops(), y = scrollY, end = s[s.length - 1];
-    if (y > end + 2 || (y >= end - 2 && e.deltaY > 0)) return;
+    if (y > end + 2) return;
+    if (y >= end - 2 && e.deltaY > 0) { if (strictSnap) root.classList.remove('has-snap'); return; }
     e.preventDefault();
     clearTimeout(idle);
     idle = setTimeout(() => { busy = false; acc = 0; }, 200);
@@ -203,6 +206,7 @@ function setUpSnap(sec) {
     if (to !== undefined) scrollTo({ top: to, behavior: reduce ? 'instant' : 'smooth' });
   };
   const arm = () => {
+    if (strictSnap) zone();
     const near = scrollY < reach;
     if (near === armed) return;
     armed = near;
@@ -211,6 +215,11 @@ function setUpSnap(sec) {
   };
 
   let tg = null, snapTimer = 0;
+  const zone = () => {
+    if (tg) return;
+    if (scrollY < endY - 2) root.classList.add('has-snap');
+    else if (scrollY > endY + 2) root.classList.remove('has-snap');
+  };
   const dbg = location.search.includes('probe') ? (window.__snapdbg = []) : null;
   const last = () => { const s = stops(); return s[s.length - 1]; };
   const onTouchStart = (e) => {
@@ -247,7 +256,7 @@ function setUpSnap(sec) {
     if (dbg) dbg.push(['te', Math.round(cur), to]);
     scrollTo({ top: to, behavior: reduce ? 'instant' : 'smooth' });
     clearTimeout(snapTimer);
-    snapTimer = setTimeout(() => { if (!tg) root.classList.add('has-snap'); }, 520);
+    snapTimer = setTimeout(strictSnap ? zone : () => { if (!tg) root.classList.add('has-snap'); }, 520);
   };
   addEventListener('touchstart', onTouchStart, { passive: true });
   addEventListener('touchmove', onTouchMove, { passive: false });
@@ -261,7 +270,8 @@ function setUpSnap(sec) {
     const top = Math.round(edge - document.body.getBoundingClientRect().top);
     if (rest.style.top !== top + 'px') rest.style.top = top + 'px';
     reach = edge + scrollY + innerHeight;
-    root.classList.add('has-snap');
+    endY = last();
+    if (!strictSnap) root.classList.add('has-snap');
     arm();
   };
   const ro = new ResizeObserver(sync);

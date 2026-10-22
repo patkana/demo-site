@@ -107,6 +107,7 @@ html.has-snap{scroll-snap-type:y mandatory}
 .hero-snap,.hero-rest{position:absolute;left:0;width:1px;pointer-events:none;scroll-snap-align:start}
 .hero-snap{height:1px;scroll-snap-stop:always}
 .hero-snap.s0{top:0}
+html.snap-strict .hero-snap.s0{top:var(--bar)}
 .hero-snap.s1{top:calc(50% - max(100lvh,560px) / 2 + var(--bar))}
 .hero-snap.s2{top:calc(100% - max(100lvh,560px) + var(--bar))}
 body{position:relative}
