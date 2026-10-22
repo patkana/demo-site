@@ -291,31 +291,7 @@ export async function setUpGlass() {
     for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, sync, { passive: true });
     if (new URLSearchParams(location.search).has('probe')) window.__fallback = { probe: () => ({ w: v.videoWidth, settled, upgrading, pending: !!pending, src: (v.currentSrc || '').slice(0, 5) }) };
   };
-  const staticFallback = () => {
-    canvas.remove();
-    root.classList.remove('glass-wait'); root.classList.add('glass-css', 'glass-static');
-    const wrap = document.createElement('div');
-    wrap.className = 'scene-wrap';
-    const stick = document.createElement('div');
-    stick.className = 'scene-stick';
-    const img = document.createElement('img');
-    img.className = 'scene-fallback';
-    img.alt = '';
-    img.decoding = 'async';
-    img.src = SCENE[pickSet()].full + '.webp';
-    stick.append(img);
-    wrap.append(stick);
-    const fit = () => {
-      let top = Infinity, bottom = -Infinity;
-      for (const el of plates) { const r = el.getBoundingClientRect(); top = Math.min(top, r.top + scrollY); bottom = Math.max(bottom, r.bottom + scrollY); }
-      if (top < bottom) { wrap.style.top = Math.round(top) + 'px'; wrap.style.height = Math.round(bottom - top) + 'px'; }
-    };
-    document.body.prepend(wrap);
-    fit();
-    new ResizeObserver(fit).observe(document.body);
-    addEventListener('load', fit, { once: true });
-  };
-  if (!navigator.gpu || /firefox|fxios/i.test(navigator.userAgent)) { staticFallback(); return; }
+  if (!navigator.gpu || /firefox|fxios/i.test(navigator.userAgent)) { root.classList.add('glass-lite'); cssFallback(); return; }
   let tier = storedTier() || 'ultra';
   const gpu = await startGpu(canvas, tier).catch(() => null);
   if (!gpu) { cssFallback(); return; }
