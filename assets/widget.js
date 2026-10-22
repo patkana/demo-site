@@ -362,12 +362,12 @@
     var job = speakJob;
     speakBtn = btn || null;
     if (speakBtn) speakBtn.innerHTML = ICON.stop;
-    if (!voiceOn || activeLang() !== 'bg' || !player || !window.fetch || !window.AbortController) return browserSpeak(text, job);
+    if (!voiceOn || (activeLang() !== 'bg' && activeLang() !== 'en') || !player || !window.fetch || !window.AbortController) return browserSpeak(text, job);
     var ctl = speakCtl = new AbortController(), total = 1;
     var part = function(i){
       return fetch(ttsBase + '/api/tts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
-        body: JSON.stringify({ text: text, part: i, voice: voiceName })
+        body: JSON.stringify({ text: text, part: i, voice: voiceName, lang: activeLang() })
       }).then(function(r){
         if (!r.ok) throw new Error('tts ' + r.status);
         total = parseInt(r.headers.get('X-TTS-Parts'), 10) || 1;
