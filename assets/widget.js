@@ -518,7 +518,7 @@
   syncLang();
   addEventListener('langchange', syncLang);
   setTimeout(showNudge, 700);
-  setTimeout(function(){ var k='iqgreet'; try { if (opened || sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch (e) {} open(); }, 3000);
+  setTimeout(function(){ var k='iqgreet'; if (phone()) return; try { if (opened || sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch (e) {} open(); }, 3000);
   if (window.matchMedia && matchMedia('(max-width:480px)').matches) {
     var calm = function(){};
     setTimeout(calm, 6700);
