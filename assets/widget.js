@@ -219,9 +219,9 @@
       + '<textarea rows="1" maxlength="500" placeholder="'+esc(txt.placeholder())+'"></textarea>'
       + '<button class="mic hide" aria-label="'+esc(txt.mic())+'">'+ICON.mic+'</button>'
       + '<button class="send" aria-label="'+esc(txt.send())+'">'+ICON.send+'</button></div>'
-      + '<div class="foot">'+(promoHtml || '<a href="https://iqbotbg.pro" target="_blank" rel="noopener">'+esc(txt.powered())+'</a>')+'</div></div>'
+      + '<div class="foot">'+(promoHtml || '<span class="pw">'+esc(txt.powered())+'</span>')+'</div></div>'
     : '<div class="input"><input type="text" placeholder="'+esc(txt.placeholder())+'" maxlength="500"><button class="send" aria-label="Send">▸</button></div>'
-      + '<div class="foot"><a href="https://iqbotbg.pro" target="_blank" rel="noopener">'+esc(txt.powered())+' ⚡</a></div>';
+      + '<div class="foot"><span class="pw">'+esc(txt.powered())+' ⚡</span></div>';
 
   var html = '<style>'+css+'</style>'
     + '<div class="nudge" aria-hidden="true"><span class="n1"><span class="nd"></span><span class="nt"></span></span><span class="n2"></span></div>'
@@ -505,7 +505,7 @@
     var h = root.querySelector('.header .t'); if (h) h.textContent = txt.title();
     var st = glass && root.querySelector('.header .st'); if (st) st.textContent = txt.status();
     if (input) input.placeholder = txt.placeholder();
-    var f = root.querySelector('.foot > a'); if (f) f.textContent = txt.powered() + (glass ? '' : ' ⚡');
+    var f = root.querySelector('.foot > .pw'); if (f) f.textContent = txt.powered() + (glass ? '' : ' ⚡');
     var pt = root.querySelector('.promo .pt'); if (pt) pt.textContent = txt.promo();
     if (close && glass) close.setAttribute('aria-label', txt.close());
     if (nudgeText) nudgeText.textContent = nudgeLang()[0];
